@@ -1,0 +1,8 @@
+[workspace]
+members = ["ast", "parser", "lexer", "syntax"]
+
+resolver = "2"
+
+[workspace.package]
+edition = "2021"
+rust-version = "1.74.0"
