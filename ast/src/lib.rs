@@ -1,8 +1,24 @@
 use mz_sql_parser::ast as mz_ast;
 use parser::parse;
 use parser::Parse;
+use rowan::TextRange;
 use syntax::SyntaxKind::*;
 use syntax::SyntaxNode;
+
+#[derive(Debug)]
+struct Error {
+    message: String,
+    pos: usize,
+}
+
+impl Error {
+    fn new(message: impl Into<String>, pos: TextRange) -> Self {
+        Self {
+            message: message.into(),
+            pos: pos.start().into(),
+        }
+    }
+}
 
 macro_rules! ast_node {
     ($ast:ident, $kind:ident) => {
@@ -39,27 +55,26 @@ impl From<Parse> for Root {
 }
 
 impl DropObjects {
-    fn typ(&self) -> Option<mz_ast::ObjectType> {
+    fn typ(&self) -> Result<ObjectType, Error> {
         self.0
             .children()
             .find_map(ObjectType::cast)
-            .and_then(|t| t.typ())
+            .ok_or_else(|| Error::new("no object type specified", self.0.text_range()))
     }
 }
 
 impl ObjectType {
-    fn typ(&self) -> Option<mz_ast::ObjectType> {
-        self.0
-            .green()
-            .children()
-            .find(|t| t.kind() == KEYWORD.into())
-            .and_then(|t| match t {
-                rowan::NodeOrToken::Node(_) => None,
-                rowan::NodeOrToken::Token(t) => match t.text() {
-                    "TABLE" => Some(mz_ast::ObjectType::Table),
-                    _ => None,
-                },
-            })
+    fn typ(&self) -> Result<mz_ast::ObjectType, Error> {
+        match self.0.children_with_tokens().find(|t| t.kind() == KEYWORD) {
+            Some(rowan::NodeOrToken::Token(tok)) => match tok.text() {
+                "TABLE" => Ok(mz_ast::ObjectType::Table),
+                t => Err(Error::new(
+                    format!("unknown object type: {t}"),
+                    tok.text_range(),
+                )),
+            },
+            _ => Err(Error::new("no object type", self.0.text_range())),
+        }
     }
 }
 
@@ -90,15 +105,20 @@ impl Statement {
 
 #[test]
 fn test_ast() {
-    let text = "drop table blah
+    let text = "drop VIEW blah
     -- drop dependents
     CASCADE;";
     let root = Root::from(parse(text));
     let statements = root.statements();
     for s in statements {
+        dbg!(&s);
         match s.kind() {
             StatementKind::DropObjects(s) => {
-                dbg!(s.typ());
+                s.0.children_with_tokens().for_each(|t| {
+                    dbg!(&t, t.index());
+                });
+                let typ = s.typ();
+                dbg!(typ.and_then(|t| t.typ()));
             }
         }
     }
