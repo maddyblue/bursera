@@ -192,16 +192,93 @@ impl Parse {
 
 #[test]
 fn test_parser() {
-    let text = "drop table blah
+    let text = "/* comment test */drop /*more*/table /*oaeu*/blah
     -- drop dependents
     CASCADE;";
-    let node = parse(text).syntax();
+    let parsed = parse(text);
+    let node = parsed.syntax();
+    dbg!(node);
+    let p = parsed.pretty(&crate::prettier::Prettier { tab_width: 4 });
+    dbg!(&p);
+    println!("PRETTY:\n\n{}", p.pretty(80));
+}
 
-    let list = node.children().next().unwrap();
-    let children = list
-        .children_with_tokens()
-        .map(|child| format!("{:?}@{:?}", child.kind(), child.text_range()))
-        .collect::<Vec<_>>();
+mod prettier {
+    use pretty::RcDoc;
+    use syntax::SyntaxKind::*;
+    use syntax::SyntaxNode;
 
-    dbg!(&node);
+    use crate::Parse;
+
+    impl Parse {
+        pub fn pretty<'p>(&'p self, prettier: &'p Prettier) -> RcDoc<()> {
+            let node = self.syntax();
+            let statements = node.children_with_tokens().map(|c| match c {
+                rowan::NodeOrToken::Node(n) => prettier.node(n),
+                rowan::NodeOrToken::Token(t) => {
+                    match t.kind() {
+                        LINECOMMENT | MULTILINECOMMENT => {
+                            RcDoc::concat([RcDoc::text(t.text().to_string()), RcDoc::hardline()])
+                        }
+                        WHITESPACE => {
+                            let t = t.text();
+                            let lines = t.lines().map(|_| RcDoc::hardline()).collect::<Vec<_>>();
+                            if lines.len() == 1 {
+                                RcDoc::text(t.to_string())
+                            } else {
+                                RcDoc::concat(lines)
+                            }
+                        }
+                        // Pass other random stuff through unchanged.
+                        _ => RcDoc::text(t.text().to_string()),
+                    }
+                }
+            });
+            // todo: if there are multiple statements, make sure they end with semicolons
+            // todo: preserve comments inbetween statements
+            RcDoc::concat(statements)
+        }
+    }
+
+    pub struct Prettier {
+        pub tab_width: isize,
+    }
+
+    impl Prettier {
+        fn node(&self, node: SyntaxNode) -> RcDoc {
+            // Record initial comments so we only tab the first non-comment node (well, the nodes
+            // after it).
+            let mut top_comments = Vec::new();
+            let mut docs = Vec::new();
+            let mut seen_non_comment = false;
+            for c in node.children_with_tokens() {
+                if c.kind() == WHITESPACE {
+                    continue;
+                }
+                if !seen_non_comment && !c.kind().is_comment() {
+                    seen_non_comment = true;
+                }
+                let doc = match c {
+                    rowan::NodeOrToken::Node(n) => self.node(n),
+                    rowan::NodeOrToken::Token(t) => {
+                        let doc = RcDoc::text(t.text().to_string());
+                        let line = if t.kind().is_comment() {
+                            // Comments can never be grouped.
+                            RcDoc::hardline()
+                        } else {
+                            RcDoc::line()
+                        };
+                        RcDoc::concat([doc, line])
+                    }
+                };
+                if !seen_non_comment {
+                    top_comments.push(doc);
+                } else {
+                    docs.push(doc);
+                }
+            }
+            let doc = RcDoc::concat(docs).nest(self.tab_width).group();
+            RcDoc::concat([RcDoc::concat(top_comments), doc])
+        }
+    }
 }

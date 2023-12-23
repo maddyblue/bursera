@@ -39,6 +39,12 @@ pub enum SyntaxKind {
 use lexer::Token;
 use SyntaxKind::*;
 
+impl SyntaxKind {
+    pub fn is_comment(&self) -> bool {
+        matches!(self, LINECOMMENT | MULTILINECOMMENT)
+    }
+}
+
 impl From<SyntaxKind> for rowan::SyntaxKind {
     fn from(kind: SyntaxKind) -> Self {
         Self(kind as u16)
@@ -89,3 +95,4 @@ impl rowan::Language for Lang {
 pub type SyntaxNode = rowan::SyntaxNode<Lang>;
 pub type SyntaxToken = rowan::SyntaxToken<Lang>;
 pub type SyntaxElement = rowan::NodeOrToken<SyntaxNode, SyntaxToken>;
+pub type SyntaxNodeChildren = rowan::SyntaxNodeChildren<Lang>;
