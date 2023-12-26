@@ -27,10 +27,21 @@ pub enum SyntaxKind {
 
     // Statement nodes.
     DROP_OBJECTS,
+    QUERY,
+    SELECT_STATEMENT,
+    SELECT,
 
     // Inner composite nodes.
     OBJECT_TYPE,
+    ORDER_BY,
+    ORDER_BY_EXPR,
+    ORDER_BY_DIRECTION,
     CASCADE_OR_RESTRICT,
+    EXPR,
+    WHERE,
+    FROM,
+    GROUP_BY,
+    HAVING,
 
     // Must be last.
     ERR,
